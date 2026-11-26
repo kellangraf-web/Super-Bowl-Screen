@@ -6,7 +6,7 @@ than the worst past champion, as a buffer. A team must pass **every** filter.
 The cutoffs are fixed and don't recalculate. It runs **after Week 10** and
 **after the regular season**.
 
-**Interactive dashboard → `docs/index.html`** (GitHub Pages; see below)  
+## [▶ Open the interactive dashboard](https://kellangraf-web.github.io/Super-Bowl-Screen/)  
 **Latest results → [output/RESULTS.md](output/RESULTS.md)** (auto-updates every Tuesday)
 
 ## The filters
