@@ -53,16 +53,13 @@ METRICS = {
     "prd":                    ("Passer rating differential",         True,  "n1",   "Passing"),
     "anya_diff":              ("ANY/A differential",                 True,  "n2",   "Passing"),
     "to_margin_pg":           ("Turnover margin / game",             True,  "n2",   "Ball security"),
-    # Health: data only (not a screen filter). IR from 2016, playoff snaps from 2013.
-    "ir_count":               ("Players on IR / reserve",            False, "int",  "Health"),
-    "po1_missing":            ("Starters missing, 1st playoff game", False, "int",  "Health"),
 }
 
 
 def load() -> pl.DataFrame:
     """Join the three stat files and build the QB composite."""
     df = pl.read_csv(DATA / "team_stats.csv", infer_schema_length=None)
-    for f in ["team_extra.csv", "team_research.csv", "team_injuries.csv"]:
+    for f in ["team_extra.csv", "team_research.csv"]:
         df = df.join(pl.read_csv(DATA / f, infer_schema_length=None),
                      on=["season", "team", "checkpoint"], how="left")
     by = ["checkpoint", "season"]

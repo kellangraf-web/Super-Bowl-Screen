@@ -608,19 +608,13 @@ function drawTable() {
     .on("click", () => { state.sort = f.key; drawTable(); }));
   hr.append("th").html(`Win %<span class="tip">record</span>`)
     .classed("sorted", sortKey === "win_pct").on("click", () => { state.sort = "win_pct"; drawTable(); });
-  // Health columns: shown for reference, never part of the screen
-  const health = ["ir_count", "po1_missing"].filter(k => !cols.some(f => f.key === k));
-  const healthTitle = { ir_count: ["On IR", "2016+"], po1_missing: ["Starters out", "1st playoff game"] };
-  health.forEach(k => hr.append("th").classed("sorted", sortKey === k)
-    .html(`${healthTitle[k][0]}<span class="tip">${healthTitle[k][1]}</span>`)
-    .on("click", () => { state.sort = k; drawTable(); }));
 
   const body = t.append("tbody");
   let addedSep = false;
   rows.forEach(d => {
     const ok = passes(d);
     if (!sortKey && !ok && !addedSep) {        // divider between contenders and the rest
-      body.append("tr").attr("class", "sep").append("td").attr("colspan", cols.length + 3 + health.length).text("Screened out");
+      body.append("tr").attr("class", "sep").append("td").attr("colspan", cols.length + 3).text("Screened out");
       addedSep = true;
     }
     const tr = body.append("tr").classed("contender", ok)
@@ -634,7 +628,6 @@ function drawTable() {
         .text((pass ? "" : "✕ ") + ord(d.r[f.key]));
     });
     tr.append("td").text(fmt("win_pct", d.v.win_pct));
-    health.forEach(k => tr.append("td").text(fmt(k, d.v[k])));   // "—" when no data
   });
 }
 

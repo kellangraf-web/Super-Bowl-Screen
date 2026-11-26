@@ -28,7 +28,6 @@ jobs:
           python build_data.py      # rebuilds only the current season
           python features_extra.py  # Vegas rating, opponent-adjusted EPA, pedigree
           python features_research.py  # passer rating diff, yards/play diff, turnovers, sacks
-          python features_injuries.py  # IR counts (2016+), starters missing in 1st playoff game (2013+)
           python screen.py          # writes output/RESULTS.md + CSVs
           python export_dashboard.py  # writes docs/data.json for the dashboard
 
