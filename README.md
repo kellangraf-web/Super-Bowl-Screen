@@ -6,6 +6,7 @@ than the worst past champion, as a buffer. A team must pass **every** filter.
 The cutoffs are fixed and don't recalculate. It runs **after Week 10** and
 **after the regular season**.
 
+**Interactive dashboard → `docs/index.html`** (GitHub Pages; see below)  
 **Latest results → [output/RESULTS.md](output/RESULTS.md)** (auto-updates every Tuesday)
 
 ## The filters
@@ -69,6 +70,8 @@ yards-per-play differential.
 | `features_extra.py` | Vegas rating, opponent-adjusted EPA, recent form, playoff pedigree |
 | `features_research.py` | Passer rating diff, ANY/A diff, yards/play diff, turnovers, sacks, scoring |
 | `build_data.py` | Downloads and caches `data/team_stats.csv` (`--all` for full history) |
+| `export_dashboard.py` | Writes `docs/data.json` for the dashboard |
+| `docs/index.html` | Interactive dashboard: live filter sliders, backtest, scatter, team table |
 | `screen.py` | Sets cutoffs from past champs, runs the screen, writes `output/` |
 | `.github/workflows/update.yml` | Re-runs everything every Tuesday and commits results |
 
@@ -89,3 +92,20 @@ Edit `FILTERS` at the top of `screen.py` to change a stat or its "top X" cutoff.
 - [SI: Passer Rating Differential](https://www.si.com/more-sports/2011/06/23/most-importantstatpasserratingdifferential)
 - [Football Perspective: Super Bowl metrics](https://www.footballperspective.com/super-bowl-metrics/)
 - [AJC: Super Bowl champions' statistical indicators](https://ajc.com/sports/football/super-bowl-champions-have-certain-statistical-indicators/cLOjXXg1anpPighqSL5IcP)
+
+## Dashboard
+
+`docs/index.html` is a single-page dashboard built with D3. It reads
+`docs/data.json`, which the weekly Action regenerates. You can:
+
+- switch between **After Week 10** and **After regular season**, and pick any season since 2002
+- drag each filter's **top X** slider and watch the backtest and the champions-kept count update live
+- add any of 31 stats as a new filter, or remove one
+- plot any two stats against each other, with cutoff lines and the champion marked
+- sort the team table by any filter
+
+**Turn it on:** Settings → Pages → Source: *Deploy from a branch* → `main` / `/docs`.
+GitHub Pages on a **private** repo needs GitHub Pro, which is free with the
+GitHub Student Developer Pack. Otherwise, make the repo public.
+
+**Preview locally:** `cd docs && python -m http.server`, then open http://localhost:8000.

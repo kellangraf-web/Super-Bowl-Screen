@@ -29,11 +29,12 @@ jobs:
           python features_extra.py  # Vegas rating, opponent-adjusted EPA, pedigree
           python features_research.py  # passer rating diff, yards/play diff, turnovers, sacks
           python screen.py          # writes output/RESULTS.md + CSVs
+          python export_dashboard.py  # writes docs/data.json for the dashboard
 
       - name: Commit changes (if any)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data output
+          git add data output docs
           git diff --cached --quiet || git commit -m "Weekly screen update"
           git push

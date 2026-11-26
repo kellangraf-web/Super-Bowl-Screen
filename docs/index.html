@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Bowl Screen</title>
+<meta name="description" content="Interactive screen of NFL teams that fit the statistical profile of past Super Bowl champions.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  /* ---------- color + type tokens (light) ---------- */
+  :root {
+    color-scheme: light;
+    --surface-0: #f6f6f4;      /* page */
+    --surface-1: #ffffff;      /* cards / chart surface */
+    --surface-2: #f0f0ee;      /* subtle fills, failed cells */
+    --border:    #e2e2df;
+    --grid:      #ececea;
+    --text-primary:   #191919;
+    --text-secondary: #666666;
+    --text-tertiary:  #8a8a8a;
+    --pass:      #257de0;      /* contender / passed (series slot 1) */
+    --pass-soft: #e3effc;      /* passed cell tint */
+    --out:       #b9b9b6;      /* non-contender dots */
+    --critical:  #dc3c3d;      /* champ missed (status) */
+    --good:      #0aac23;      /* champ kept (status) */
+    --cut-band:  rgba(37,125,224,0.07);
+    --focus:     #257de0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #111111; --surface-1: #191919; --surface-2: #232323;
+      --border: #2e2e2e; --grid: #262626;
+      --text-primary: #efefef; --text-secondary: #9c9c9c; --text-tertiary: #7a7a7a;
+      --pass: #338ced; --pass-soft: #16304f; --out: #4d4d4d;
+      --critical: #dc3c3d; --good: #0aac23; --cut-band: rgba(51,140,237,0.10); --focus: #338ced;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111111; --surface-1: #191919; --surface-2: #232323;
+    --border: #2e2e2e; --grid: #262626;
+    --text-primary: #efefef; --text-secondary: #9c9c9c; --text-tertiary: #7a7a7a;
+    --pass: #338ced; --pass-soft: #16304f; --out: #4d4d4d;
+    --critical: #dc3c3d; --good: #0aac23; --cut-band: rgba(51,140,237,0.10); --focus: #338ced;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); margin-top: 2px; }
+  h2 { font-size: 14px; margin: 0 0 2px; }
+  .hint { color: var(--text-secondary); font-size: 12px; margin: 0 0 10px; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; }
+  .seg button {
+    border: 0; background: transparent; color: var(--text-secondary); font: inherit;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface-1); color: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  select, .btn {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .btn:hover, select:hover { border-color: var(--text-tertiary); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+
+  /* ---------- layout ---------- */
+  .grid { display: grid; gap: 16px; grid-template-columns: 340px minmax(0, 1fr); }
+  .stack { display: grid; gap: 16px; min-width: 0; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+  aside.card { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } aside.card { position: static; max-height: none; } }
+
+  /* ---------- KPI tiles ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+  .kpi .label { color: var(--text-secondary); font-size: 12px; }
+  .kpi .value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .kpi .note { color: var(--text-secondary); font-size: 12px; }
+  @media (max-width: 600px) { .kpis { grid-template-columns: 1fr; } }
+  .status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+  .status.good { color: var(--good); } .status.bad { color: var(--critical); }
+
+  /* ---------- filter panel ---------- */
+  .filter { border-top: 1px solid var(--border); padding: 12px 0; }
+  .filter:first-of-type { border-top: 0; padding-top: 4px; }
+  .filter .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .filter .name { font-weight: 600; }
+  .filter .val { font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+  .filter .meta { color: var(--text-secondary); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .filter .meta .warn { color: var(--critical); }
+  .x { border: 0; background: none; color: var(--text-tertiary); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+  .x:hover { color: var(--text-primary); }
+  input[type=range] { width: 100%; accent-color: var(--pass); margin: 6px 0 2px; }
+  .add { display: flex; gap: 8px; margin-top: 8px; }
+  .add select { flex: 1; min-width: 0; }
+
+  /* ---------- charts ---------- */
+  .chart { width: 100%; position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .axis text { fill: var(--text-secondary); font-size: 11px; }
+  .axis line, .axis path { stroke: var(--grid); }
+  .axis .domain { display: none; }
+  .gridline line { stroke: var(--grid); }
+  .axis-title { fill: var(--text-secondary); font-size: 11px; }
+  .dlabel { fill: var(--text-primary); font-size: 11px; font-weight: 600; pointer-events: none; paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; }
+  .chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .chart-controls select { max-width: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-secondary); font-size: 12px; margin-top: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .sw.dot { border-radius: 50%; }
+  .sw.ring { border-radius: 50%; background: transparent; border: 2px solid var(--text-primary); }
+
+  /* ---------- table ---------- */
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: separate; border-spacing: 0 2px; width: 100%; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-weight: 500; color: var(--text-secondary); font-size: 12px; padding: 4px 8px; white-space: nowrap; cursor: pointer; user-select: none; }
+  th.sorted { color: var(--text-primary); }
+  th .tip { display: block; font-size: 11px; color: var(--text-tertiary); font-weight: 400; }
+  td { padding: 5px 8px; white-space: nowrap; }
+  td.team { font-weight: 600; }
+  td.cell { text-align: center; border-radius: 6px; }
+  td.cell.ok  { background: var(--pass-soft); color: var(--text-primary); }
+  td.cell.bad { background: var(--surface-2); color: var(--text-tertiary); }
+  tr.contender td.team { color: var(--pass); }
+  tr.sep td { padding: 8px 8px 2px; color: var(--text-secondary); font-size: 12px; border-top: 1px solid var(--border); }
+  .champ-tag { font-size: 11px; font-weight: 600; color: var(--text-primary); border: 1px solid var(--text-primary); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+
+  /* ---------- tooltip ---------- */
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 10; opacity: 0; transition: opacity .08s;
+    background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.16); max-width: 260px;
+  }
+  .tooltip .t { font-weight: 600; margin-bottom: 4px; }
+  .tooltip .row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); }
+  .tooltip .row b { color: var(--text-primary); font-weight: 600; }
+  footer { color: var(--text-tertiary); font-size: 12px; margin-top: 24px; }
+  footer a { color: var(--text-secondary); }
+  .loading { color: var(--text-secondary); padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Super Bowl Contender Screen</h1>
+      <div class="sub" id="subtitle">Teams that fit the statistical profile of every champion since 2002</div>
+    </div>
+    <div class="controls" style="margin:0">
+      <button class="btn" id="themeBtn" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Checkpoint">
+      <button type="button" data-cp="wk10">After Week 10</button>
+      <button type="button" data-cp="full">After regular season</button>
+    </div>
+    <label class="inline">Season <select id="season"></select></label>
+    <button class="btn" id="resetBtn" type="button">Reset filters</button>
+  </div>
+
+  <div id="app" class="loading">Loading data…</div>
+</div>
+<div class="tooltip" id="tip" role="status"></div>
+
+<script>
+/* =====================================================================
+   Super Bowl Screen dashboard
+   Data: data.json (written weekly by export_dashboard.py)
+   Everything below recomputes live from `state` whenever a control changes.
+   ===================================================================== */
+
+const state = { cp: "wk10", season: null, filters: [], x: "net_epa", y: "win_pct", sort: null };
+let DATA, METRICS, MBYKEY, ROWS, CHAMPS, LAST_CHAMP_SEASON, CURRENT;
+
+/* ---------- formatting ---------- */
+const FMT = {
+  pct3: v => d3.format(".3f")(v).replace(/^0/, ""),   // .650
+  n1:   v => d3.format("+.1f")(v),
+  n2:   v => d3.format("+.2f")(v),
+  n3:   v => d3.format("+.3f")(v),
+  int:  v => d3.format("d")(v),
+};
+const fmt = (key, v) => v == null ? "—" : FMT[MBYKEY[key].fmt](v);
+const ord = n => n + (["th","st","nd","rd"][((n % 100) - 20) % 10] || ["th","st","nd","rd"][n % 100] || "th");
+
+/* ---------- load + prepare ---------- */
+d3.json("data.json").then(raw => {
+  DATA = raw;
+  METRICS = raw.metrics;
+  MBYKEY = Object.fromEntries(METRICS.map(m => [m.key, m]));
+  CHAMPS = raw.champions;                                   // {"2002": "TB", ...}
+  LAST_CHAMP_SEASON = d3.max(Object.keys(CHAMPS), Number);
+
+  // Unpack compact rows -> objects with raw values (v) and ranks (r)
+  ROWS = raw.rows.map(a => ({
+    season: a[0], cp: raw.checkpoints[a[1]], team: a[2], games: a[3],
+    v: Object.fromEntries(METRICS.map((m, i) => [m.key, a[4 + i]])), r: {},
+  }));
+  // Rank every metric within each season + checkpoint (1 = best, ties share, nulls last)
+  d3.group(ROWS, d => d.season, d => d.cp).forEach(byCp => byCp.forEach(group => {
+    METRICS.forEach(m => {
+      const vals = group.map(d => d.v[m.key]).filter(v => v != null)
+                        .sort((a, b) => m.hib ? b - a : a - b);
+      group.forEach(d => {
+        const v = d.v[m.key];
+        d.r[m.key] = v == null ? group.length : vals.findIndex(x => x === v) + 1;
+      });
+    });
+  }));
+
+  CURRENT = d3.max(ROWS, d => d.season);
+  state.season = CURRENT;
+  state.filters = structuredClone(raw.defaults[state.cp]);
+
+  // Season dropdown (newest first; past seasons show their champ)
+  d3.select("#season").selectAll("option")
+    .data(d3.range(CURRENT, d3.min(ROWS, d => d.season) - 1, -1))
+    .join("option").attr("value", d => d)
+    .text(d => CHAMPS[d] ? `${d} · champ ${CHAMPS[d]}` : `${d} · in progress`);
+
+  buildShell();
+  wireControls();
+  render();
+}).catch(err => {
+  document.getElementById("app").textContent = "Couldn't load data.json: " + err;
+});
+
+/* ---------- core logic ---------- */
+const seasonRows = (season, cp = state.cp) => ROWS.filter(d => d.season === season && d.cp === cp);
+const passes = d => state.filters.every(f => d.r[f.key] <= f.top);
+const failedFilters = d => state.filters.filter(f => d.r[f.key] > f.top);
+
+// Backtest every completed season with the CURRENT filters
+function backtest() {
+  const out = [];
+  for (let s = d3.min(ROWS, d => d.season); s <= LAST_CHAMP_SEASON; s++) {
+    const rows = seasonRows(s);
+    const champ = rows.find(d => d.team === CHAMPS[s]);
+    if (!champ) continue;
+    out.push({ season: s, n: rows.filter(passes).length, champ: champ.team,
+               kept: passes(champ), failed: failedFilters(champ) });
+  }
+  return out;
+}
+
+// Worst rank any past champion had on a metric (sets the "buffer")
+function worstChamp(key) {
+  let worst = null;
+  for (const s of Object.keys(CHAMPS)) {
+    const d = ROWS.find(x => x.season === +s && x.cp === state.cp && x.team === CHAMPS[s]);
+    if (d && (!worst || d.r[key] > worst.rank)) worst = { rank: d.r[key], season: +s, team: d.team };
+  }
+  return worst;
+}
+
+/* ---------- page shell ---------- */
+function buildShell() {
+  document.getElementById("app").className = "";
+  document.getElementById("app").innerHTML = `
+    <div class="grid">
+      <aside class="card" aria-labelledby="fhead">
+        <h2 id="fhead">Filters</h2>
+        <p class="hint">A team must be top&nbsp;X in <b>every</b> filter. Drag to tighten or loosen; the backtest updates live.</p>
+        <div id="filters"></div>
+        <div class="add">
+          <select id="addSel" aria-label="Add a filter"></select>
+          <button class="btn" id="addBtn" type="button">Add</button>
+        </div>
+      </aside>
+      <div class="stack">
+        <div class="kpis" id="kpis"></div>
+        <section class="card" aria-labelledby="bthead">
+          <h2 id="bthead">Backtest: contenders each season</h2>
+          <p class="hint">Bar height = teams that passed every filter. Click a bar to open that season.</p>
+          <div class="chart" id="btChart"></div>
+          <div class="legend">
+            <span><i class="sw" style="background:var(--pass)"></i>Champion passed</span>
+            <span><i class="sw" style="background:var(--critical)"></i>✕ Champion cut</span>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="schead">
+          <h2 id="schead">Explore any two stats</h2>
+          <p class="hint">Shaded area and dashed lines = a filter's cutoff, when that stat is an active filter. Better is always up and to the right.</p>
+          <div class="chart-controls">
+            <label class="inline">X <select id="xSel"></select></label>
+            <label class="inline">Y <select id="ySel"></select></label>
+          </div>
+          <div class="chart" id="scatter"></div>
+          <div class="legend">
+            <span><i class="sw dot" style="background:var(--pass)"></i>Contender</span>
+            <span><i class="sw dot" style="background:var(--out)"></i>Screened out</span>
+            <span><i class="sw ring"></i>Super Bowl champion</span>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="tbhead">
+          <h2 id="tbhead">Every team, ranked on each filter</h2>
+          <p class="hint">Cells show league rank. Shaded = passed. Click a column to sort.</p>
+          <div class="tablewrap" id="table"></div>
+        </section>
+      </div>
+    </div>
+    <footer>Data: nflverse play-by-play via nflreadpy · Updated <span id="gen"></span> ·
+      <a href="https://github.com/kellangraf-web/Super-Bowl-Screen">Source</a></footer>`;
+
+  // Metric dropdowns, grouped by category
+  const groups = d3.groups(METRICS, m => m.group);
+  for (const id of ["xSel", "ySel", "addSel"]) {
+    const sel = d3.select("#" + id);
+    groups.forEach(([g, ms]) => {
+      const og = sel.append("optgroup").attr("label", g);
+      ms.forEach(m => og.append("option").attr("value", m.key).text(m.label));
+    });
+  }
+  d3.select("#xSel").property("value", state.x);
+  d3.select("#ySel").property("value", state.y);
+  d3.select("#gen").text(DATA.generated);
+}
+
+function wireControls() {
+  d3.selectAll(".seg button").on("click", function () {
+    state.cp = this.dataset.cp;
+    state.filters = structuredClone(DATA.defaults[state.cp]);   // each checkpoint has its own defaults
+    render();
+  });
+  d3.select("#season").on("change", function () { state.season = +this.value; render(); });
+  d3.select("#resetBtn").on("click", () => { state.filters = structuredClone(DATA.defaults[state.cp]); render(); });
+  d3.select("#xSel").on("change", function () { state.x = this.value; drawScatter(); });
+  d3.select("#ySel").on("change", function () { state.y = this.value; drawScatter(); });
+  d3.select("#addBtn").on("click", () => {
+    const key = d3.select("#addSel").property("value");
+    if (state.filters.some(f => f.key === key)) return;
+    const w = worstChamp(key);
+    // New filters start just loose enough to keep every past champ (+2 buffer)
+    state.filters.push({ key, top: Math.min(32, (w ? w.rank : 16) + 2) });
+    render();
+  });
+  d3.select("#themeBtn").on("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark"
+                                    : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    render();
+  });
+}
+
+/* ---------- render everything ---------- */
+function render() {
+  d3.selectAll(".seg button").attr("aria-pressed", function () { return this.dataset.cp === state.cp; });
+  d3.select("#season").property("value", state.season);
+  const games = d3.max(seasonRows(CURRENT), d => d.games);
+  d3.select("#subtitle").text(
+    `Teams that fit the profile of every champion since 2002 · ${CURRENT} data through ${games} games`);
+  drawFilters();
+  drawKpis();
+  drawBacktest();
+  drawScatter();
+  drawTable();
+}
+
+/* ---------- filter panel ---------- */
+function drawFilters() {
+  const box = d3.select("#filters");
+  box.selectAll("*").remove();
+  if (!state.filters.length) box.append("p").attr("class", "hint").text("No filters: every team is a contender.");
+  state.filters.forEach((f, i) => {
+    const m = MBYKEY[f.key], w = worstChamp(f.key);
+    const div = box.append("div").attr("class", "filter");
+    const top = div.append("div").attr("class", "top");
+    top.append("span").attr("class", "name").text(m.label);
+    const right = top.append("span");
+    right.append("span").attr("class", "val").attr("id", "fv" + i).text(`Top ${f.top}`);
+    right.append("button").attr("class", "x").attr("type", "button")
+      .attr("aria-label", "Remove " + m.label).text("×")
+      .on("click", () => { state.filters.splice(i, 1); render(); });
+    div.append("input").attr("type", "range").attr("min", 1).attr("max", 32).attr("value", f.top)
+      .attr("aria-label", m.label + " cutoff")
+      .on("input", function () {
+        f.top = +this.value;
+        d3.select("#fv" + i).text(`Top ${f.top}`);
+        drawMeta(i, f, w);
+        drawKpis(); drawBacktest(); drawScatter(); drawTable();   // live update while dragging
+      });
+    div.append("div").attr("class", "meta").attr("id", "fm" + i);
+    drawMeta(i, f, w);
+  });
+}
+function drawMeta(i, f, w) {
+  const buf = w ? f.top - w.rank : null;
+  d3.select("#fm" + i).html(w
+    ? `<span>Worst champ: ${ord(w.rank)} (${w.season} ${w.team})</span>
+       <span class="${buf < 0 ? "warn" : ""}">${buf < 0 ? "✕ cuts a champ" : "Buffer " + buf}</span>`
+    : "");
+}
+
+/* ---------- KPI tiles ---------- */
+function drawKpis() {
+  const rows = seasonRows(state.season), n = rows.filter(passes).length;
+  const bt = backtest(), kept = bt.filter(d => d.kept).length;
+  const champ = rows.find(d => d.team === CHAMPS[state.season]);
+  let third;
+  if (champ) {
+    const ok = passes(champ), why = failedFilters(champ).map(f => MBYKEY[f.key].label.toLowerCase());
+    third = `<div class="label">${state.season} champion</div>
+      <div class="value">${champ.team}</div>
+      <div class="note"><span class="status ${ok ? "good" : "bad"}">${ok ? "✓ Passed the screen" : "✕ Cut"}</span>
+      ${ok ? "" : " by " + why.join(", ")}</div>`;
+  } else {
+    third = `<div class="label">Avg contenders per season</div>
+      <div class="value">${d3.format(".1f")(d3.mean(bt, d => d.n))}</div>
+      <div class="note">range ${d3.min(bt, d => d.n)}–${d3.max(bt, d => d.n)}, 2002–${LAST_CHAMP_SEASON}</div>`;
+  }
+  d3.select("#kpis").html(`
+    <div class="card kpi"><div class="label">Contenders in ${state.season}</div>
+      <div class="value">${n}</div><div class="note">of ${rows.length} teams</div></div>
+    <div class="card kpi"><div class="label">Champions kept, 2002–${LAST_CHAMP_SEASON}</div>
+      <div class="value">${kept} / ${bt.length}</div>
+      <div class="note"><span class="status ${kept === bt.length ? "good" : "bad"}">
+        ${kept === bt.length ? "✓ Every champ passes" : "✕ " + (bt.length - kept) + " champ(s) cut"}</span></div></div>
+    <div class="card kpi">${third}</div>`);
+}
+
+/* ---------- tooltip helpers ---------- */
+const tip = d3.select("#tip");
+function showTip(event, html) {
+  tip.html(html).style("opacity", 1);
+  const pad = 14, w = tip.node().offsetWidth, h = tip.node().offsetHeight;
+  let x = event.clientX + pad, y = event.clientY + pad;
+  if (x + w > innerWidth - 8) x = event.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = event.clientY - h - pad;
+  tip.style("left", x + "px").style("top", y + "px");
+}
+const hideTip = () => tip.style("opacity", 0);
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ---------- backtest bar chart ---------- */
+function drawBacktest() {
+  const data = backtest();
+  const el = d3.select("#btChart"); el.selectAll("*").remove();
+  const W = el.node().clientWidth || 700, H = 220, m = { t: 22, r: 8, b: 26, l: 30 };
+  const svg = el.append("svg").attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("role", "img").attr("aria-label", "Contenders per season, 2002 to " + LAST_CHAMP_SEASON);
+  const x = d3.scaleBand().domain(data.map(d => d.season)).range([m.l, W - m.r]).padding(0.25);
+  const y = d3.scaleLinear().domain([0, Math.max(12, d3.max(data, d => d.n))]).nice().range([H - m.b, m.t]);
+
+  svg.append("g").attr("class", "axis gridline").attr("transform", `translate(${m.l},0)`)
+    .call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat(d3.format("d")))
+    .call(g => g.selectAll("line").attr("stroke", cssVar("--grid")));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`)
+    .call(d3.axisBottom(x).tickSize(0).tickPadding(8)
+      .tickValues(data.map(d => d.season).filter(s => W > 600 || s % 4 === 2))
+      .tickFormat(s => W > 600 ? "’" + String(s).slice(2) : s));
+
+  // Bars: rounded top only (4px), anchored to the baseline
+  const bw = x.bandwidth(), r = Math.min(4, bw / 2);
+  const barPath = d => {
+    const x0 = x(d.season), y0 = y(d.n), y1 = y(0);
+    if (d.n === 0) return "";
+    return `M${x0},${y1}V${y0 + r}Q${x0},${y0} ${x0 + r},${y0}H${x0 + bw - r}Q${x0 + bw},${y0} ${x0 + bw},${y0 + r}V${y1}Z`;
+  };
+  svg.append("g").selectAll("path").data(data).join("path")
+    .attr("d", barPath)
+    .attr("fill", d => d.kept ? cssVar("--pass") : cssVar("--critical"))
+    .attr("opacity", d => d.season === state.season ? 1 : 0.85)
+    .attr("stroke", d => d.season === state.season ? cssVar("--text-primary") : "none")
+    .attr("stroke-width", 2);
+
+  // Direct labels only on the exceptions (cut champs), never on every bar
+  svg.append("g").selectAll("text").data(data.filter(d => !d.kept)).join("text")
+    .attr("class", "dlabel").attr("text-anchor", "middle")
+    .attr("x", d => x(d.season) + bw / 2).attr("y", d => y(d.n) - 6)
+    .text(d => "✕ " + d.champ);
+
+  // Hit targets: full column height, wider than the bar
+  svg.append("g").selectAll("rect").data(data).join("rect")
+    .attr("x", d => x(d.season) - x.step() * x.paddingInner() / 2).attr("width", x.step())
+    .attr("y", m.t).attr("height", H - m.t - m.b).attr("fill", "transparent").style("cursor", "pointer")
+    .on("mousemove", (e, d) => showTip(e, `<div class="t">${d.season} season</div>
+        <div class="row">Contenders <b>${d.n}</b></div>
+        <div class="row">Champion <b>${d.champ}</b></div>
+        <div class="row">Screen <b class="status ${d.kept ? "good" : "bad"}">${d.kept ? "✓ kept" : "✕ cut"}</b></div>
+        ${d.kept ? "" : `<div class="row">Failed <b>${d.failed.map(f => MBYKEY[f.key].label).join(", ")}</b></div>`}`))
+    .on("mouseleave", hideTip)
+    .on("click", (e, d) => { state.season = d.season; hideTip(); render(); });
+}
+
+/* ---------- scatter plot ---------- */
+function drawScatter() {
+  const rows = seasonRows(state.season).filter(d => d.v[state.x] != null && d.v[state.y] != null);
+  const mx = MBYKEY[state.x], my = MBYKEY[state.y];
+  const el = d3.select("#scatter"); el.selectAll("*").remove();
+  const W = el.node().clientWidth || 700, H = Math.min(460, Math.max(300, W * 0.6));
+  const m = { t: 12, r: 16, b: 40, l: 52 };
+  const svg = el.append("svg").attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("role", "img").attr("aria-label", `${my.label} versus ${mx.label}, ${state.season}`);
+
+  // Lower-is-better stats get reversed axes so "better" is always up/right
+  const ext = (key, hib) => { const e = d3.extent(rows, d => d.v[key]), p = (e[1] - e[0]) * 0.06 || 1;
+                              const dom = [e[0] - p, e[1] + p]; return hib ? dom : dom.reverse(); };
+  const x = d3.scaleLinear().domain(ext(state.x, mx.hib)).range([m.l, W - m.r]);
+  const y = d3.scaleLinear().domain(ext(state.y, my.hib)).range([H - m.b, m.t]);
+  const tf = key => v => FMT[MBYKEY[key].fmt](v);
+
+  svg.append("g").attr("class", "axis gridline").attr("transform", `translate(0,${H - m.b})`)
+    .call(d3.axisBottom(x).ticks(W > 600 ? 7 : 4).tickSize(-(H - m.t - m.b)).tickFormat(tf(state.x)))
+    .call(g => g.selectAll("line").attr("stroke", cssVar("--grid")));
+  svg.append("g").attr("class", "axis gridline").attr("transform", `translate(${m.l},0)`)
+    .call(d3.axisLeft(y).ticks(6).tickSize(-(W - m.l - m.r)).tickFormat(tf(state.y)))
+    .call(g => g.selectAll("line").attr("stroke", cssVar("--grid")));
+  svg.append("text").attr("class", "axis-title").attr("x", W - m.r).attr("y", H - 6)
+    .attr("text-anchor", "end").text(mx.label + (mx.hib ? "" : " (reversed)") + " →");
+  svg.append("text").attr("class", "axis-title").attr("x", m.l).attr("y", m.t - 2)
+    .attr("transform", `rotate(-90 ${m.l - 40} ${m.t})`).attr("x", m.l - 40 - (H - m.t - m.b)).attr("y", m.t + 2)
+    .attr("text-anchor", "start").text(my.label + (my.hib ? "" : " (reversed)") + " →");
+
+  // Cutoff line = halfway between the team ranked top-X and the next team
+  const cutVal = key => {
+    const f = state.filters.find(f => f.key === key); if (!f) return null;
+    const sorted = rows.slice().sort((a, b) => a.r[key] - b.r[key]);
+    const a = sorted.filter(d => d.r[key] <= f.top).pop(), b = sorted.find(d => d.r[key] > f.top);
+    if (!a) return null; if (!b) return null;
+    return (a.v[key] + b.v[key]) / 2;
+  };
+  const cx = cutVal(state.x), cy = cutVal(state.y);
+  const band = svg.append("g");
+  if (cx != null) {
+    band.append("rect").attr("x", x(cx)).attr("y", m.t).attr("width", W - m.r - x(cx)).attr("height", H - m.t - m.b)
+      .attr("fill", cssVar("--cut-band"));
+    band.append("line").attr("x1", x(cx)).attr("x2", x(cx)).attr("y1", m.t).attr("y2", H - m.b)
+      .attr("stroke", cssVar("--pass")).attr("stroke-dasharray", "4 4").attr("stroke-width", 1.5);
+  }
+  if (cy != null) {
+    band.append("rect").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", y(cy) - m.t)
+      .attr("fill", cssVar("--cut-band"));
+    band.append("line").attr("x1", m.l).attr("x2", W - m.r).attr("y1", y(cy)).attr("y2", y(cy))
+      .attr("stroke", cssVar("--pass")).attr("stroke-dasharray", "4 4").attr("stroke-width", 1.5);
+  }
+
+  // Dots: screened-out first, contenders on top; 2px surface ring separates overlaps
+  const champ = CHAMPS[state.season];
+  const ordered = rows.slice().sort((a, b) => passes(a) - passes(b));
+  svg.append("g").selectAll("circle").data(ordered).join("circle")
+    .attr("cx", d => x(d.v[state.x])).attr("cy", d => y(d.v[state.y]))
+    .attr("r", d => passes(d) ? 6 : 5)
+    .attr("fill", d => passes(d) ? cssVar("--pass") : cssVar("--out"))
+    .attr("stroke", cssVar("--surface-1")).attr("stroke-width", 2);
+  // Champion ring (identity by shape, not color)
+  const c = rows.find(d => d.team === champ);
+  if (c) svg.append("circle").attr("cx", x(c.v[state.x])).attr("cy", y(c.v[state.y])).attr("r", 10)
+    .attr("fill", "none").attr("stroke", cssVar("--text-primary")).attr("stroke-width", 2);
+
+  // Direct labels: contenders + champion only (selective, not every point)
+  svg.append("g").selectAll("text").data(rows.filter(d => passes(d) || d.team === champ)).join("text")
+    .attr("class", "dlabel").attr("x", d => x(d.v[state.x]) + 9).attr("y", d => y(d.v[state.y]) - 8)
+    .text(d => d.team + (d.team === champ ? " ★" : ""));
+
+  // Voronoi hit targets so the nearest dot always responds
+  const delaunay = d3.Delaunay.from(rows, d => x(d.v[state.x]), d => y(d.v[state.y]));
+  const hit = svg.append("rect").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b)
+    .attr("fill", "transparent");
+  const hover = svg.append("circle").attr("r", 9).attr("fill", "none").attr("stroke", cssVar("--text-secondary"))
+    .attr("stroke-width", 1.5).style("opacity", 0).style("pointer-events", "none");
+  hit.on("mousemove", e => {
+    const [px, py] = d3.pointer(e), d = rows[delaunay.find(px, py)];
+    hover.attr("cx", x(d.v[state.x])).attr("cy", y(d.v[state.y])).style("opacity", 1);
+    showTip(e, teamTip(d));
+  }).on("mouseleave", () => { hover.style("opacity", 0); hideTip(); });
+}
+
+function teamTip(d) {
+  const ok = passes(d), champ = d.team === CHAMPS[d.season];
+  const keys = [...new Set([state.x, state.y, ...state.filters.map(f => f.key)])];
+  return `<div class="t">${d.team} · ${d.season}${champ ? " · ★ champion" : ""}</div>
+    <div class="row">Screen <b class="status ${ok ? "good" : "bad"}">${ok ? "✓ contender" : "✕ out"}</b></div>
+    ${keys.map(k => `<div class="row">${MBYKEY[k].label} <b>${fmt(k, d.v[k])} · ${ord(d.r[k])}</b></div>`).join("")}`;
+}
+
+/* ---------- team table ---------- */
+function drawTable() {
+  const rows = seasonRows(state.season);
+  const champ = CHAMPS[state.season];
+  const cols = state.filters;
+  // Default order: contenders, then by number of failed filters, then win %
+  const sortKey = state.sort;
+  rows.sort((a, b) => sortKey
+    ? a.r[sortKey] - b.r[sortKey]
+    : (passes(b) - passes(a)) || (failedFilters(a).length - failedFilters(b).length) || (a.r.win_pct - b.r.win_pct));
+
+  const tbl = d3.select("#table"); tbl.selectAll("*").remove();
+  const t = tbl.append("table");
+  const hr = t.append("thead").append("tr");
+  hr.append("th").text("Team").classed("sorted", !sortKey).on("click", () => { state.sort = null; drawTable(); });
+  hr.append("th").text("Misses");
+  cols.forEach(f => hr.append("th").classed("sorted", sortKey === f.key)
+    .html(`${MBYKEY[f.key].label}<span class="tip">top ${f.top}</span>`)
+    .on("click", () => { state.sort = f.key; drawTable(); }));
+  hr.append("th").html(`Win %<span class="tip">record</span>`)
+    .classed("sorted", sortKey === "win_pct").on("click", () => { state.sort = "win_pct"; drawTable(); });
+
+  const body = t.append("tbody");
+  let addedSep = false;
+  rows.forEach(d => {
+    const ok = passes(d);
+    if (!sortKey && !ok && !addedSep) {        // divider between contenders and the rest
+      body.append("tr").attr("class", "sep").append("td").attr("colspan", cols.length + 3).text("Screened out");
+      addedSep = true;
+    }
+    const tr = body.append("tr").classed("contender", ok)
+      .on("mousemove", e => showTip(e, teamTip(d))).on("mouseleave", hideTip);
+    const td = tr.append("td").attr("class", "team").text(d.team);
+    if (d.team === champ) td.append("span").attr("class", "champ-tag").text("★ Champ");
+    tr.append("td").text(ok ? "—" : failedFilters(d).length);
+    cols.forEach(f => {
+      const pass = d.r[f.key] <= f.top;
+      tr.append("td").attr("class", "cell " + (pass ? "ok" : "bad"))
+        .text((pass ? "" : "✕ ") + ord(d.r[f.key]));
+    });
+    tr.append("td").text(fmt("win_pct", d.v.win_pct));
+  });
+}
+
+// Redraw charts at the new width when the window is resized
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => DATA && render(), 150); });
+</script>
+</body>
+</html>
