@@ -69,6 +69,7 @@ yards-per-play differential.
 | `features.py` | Play-by-play → EPA, success, 3rd down, pressure, point diff |
 | `features_extra.py` | Vegas rating, opponent-adjusted EPA, recent form, playoff pedigree |
 | `features_research.py` | Passer rating diff, ANY/A diff, yards/play diff, turnovers, sacks, scoring |
+| `features_injuries.py` | Health data (not a filter): players on IR (2016+), starters missing in first playoff game (2013+) |
 | `build_data.py` | Downloads and caches `data/team_stats.csv` (`--all` for full history) |
 | `export_dashboard.py` | Writes `docs/data.json` for the dashboard |
 | `docs/index.html` | Interactive dashboard: live filter sliders, backtest, scatter, team table |
@@ -82,6 +83,7 @@ pip install -r requirements.txt
 python build_data.py --all
 python features_extra.py
 python features_research.py
+python features_injuries.py
 python screen.py
 ```
 
