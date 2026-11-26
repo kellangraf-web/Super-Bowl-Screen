@@ -1,0 +1,39 @@
+# Re-runs the screen every Tuesday morning (after Monday Night Football)
+# and commits the refreshed results back to the repo.
+name: Update screen
+
+on:
+  schedule:
+    - cron: "17 13 * * 2"      # Tuesdays 13:17 UTC (6:17am Mountain)
+  workflow_dispatch:            # adds a "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write               # lets the job push the updated CSVs
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: pip install -r requirements.txt
+
+      - name: Refresh current-season stats and run the screen
+        run: |
+          python build_data.py      # rebuilds only the current season
+          python features_extra.py  # Vegas rating, opponent-adjusted EPA, pedigree
+          python features_research.py  # passer rating diff, yards/play diff, turnovers, sacks
+          python screen.py          # writes output/RESULTS.md + CSVs
+
+      - name: Commit changes (if any)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data output
+          git diff --cached --quiet || git commit -m "Weekly screen update"
+          git push
